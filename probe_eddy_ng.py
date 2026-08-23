@@ -1442,16 +1442,11 @@ class ProbeEddy:
         }
 
     def start_probe_session(self, gcmd):
+        if gcmd.get("HOME_ATTEMPT_NUM", None) is not None:
+            return ProbeEddyDescendSession(self)
         session = ProbeEddyScanningProbe(self, gcmd)
         session._start_session()
         return session
-        # method = gcmd.get('METHOD', 'automatic').lower()
-        # if method in ('scan', 'rapid_scan'):
-        #    session = ProbeEddyScanningProbe(self, gcmd)
-        #    session._start_session()
-        #    return session
-        #
-        # return self._probe_session.start_probe_session(gcmd)
 
     def get_status(self, eventtime):
         if self._cmd_helper is not None:
@@ -2180,6 +2175,70 @@ class ProbeEddy:
         self._sampler = None
 
 
+#################Z-Offset FIX ###################
+
+@final
+class ProbeEddyDescendSession:
+#Session for homing/descend operations (G28 Z).
+#Uses the endstop wrapper as mcu_probe for phoming.probing_move()
+#and does NOT require Z to be homed first.
+
+    def __init__(self, eddy: ProbeEddy):
+        self._eddy = eddy
+        self._printer = eddy._printer
+        self._result = None
+
+    def run_probe(self, gcmd):
+        toolhead = self._printer.lookup_object('toolhead')
+        pos = toolhead.get_position()
+        pos[2] = -5.0  # target well below trigger height
+
+        speed = gcmd.get_float('PROBE_SPEED', self._eddy.params.probe_speed, above=0.0)
+        phoming = self._printer.lookup_object('homing')
+
+        # probing_move creates HomingMove which internally:
+        #   fires homing_move_begin - sampler started
+        #   calls home_start - sensor trigger configured
+        #   executes drip_move - toolhead descends
+        #   sensor triggers at home_trigger_height frequency
+        #   calls home_wait - trigger_time captured
+        #   fires homing_move_end - sampler finished
+        trig_pos = phoming.probing_move(self._eddy._endstop_wrapper, pos, speed)
+        cur_pos = toolhead.get_position()
+
+        # Read actual sensor height at trigger for accurate bed_z
+        last_sampler = self._eddy._last_sampler
+        trigger_time = self._eddy._endstop_wrapper.last_trigger_time
+
+        bed_z = trig_pos[2]  # fallback
+        if last_sampler and trigger_time > 0.0 and last_sampler.heights:
+            try:
+                height = last_sampler.find_height_at_time(
+                    trigger_time - 0.050, trigger_time + 0.050
+                )
+                bed_z = cur_pos[2] - height  # halt_z - sensor_height = bed position
+            except self._printer.command_error:
+                pass
+
+        if HAS_PROBE_RESULT_TYPE:
+            self._result = manual_probe.ProbeResult(
+                cur_pos[0], cur_pos[1], bed_z,
+                trig_pos[0], trig_pos[1], trig_pos[2],
+            )
+        else:
+            self._result = [cur_pos[0], cur_pos[1], bed_z]
+
+    def pull_probed_results(self):
+        if self._result is None:
+            raise self._printer.command_error("ProbeEddyDescendSession: no result")
+        return [self._result]
+
+    def end_probe_session(self):
+        self._eddy._endstop_wrapper.tap_config = None
+        self._result = None
+
+
+###################### ENDE Z-Offset FiX ###################
 
 # Probe interface that does only scanning, no up/down movement.
 # It scans at whatever height the probe is, but returns values
