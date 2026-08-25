@@ -46,4 +46,26 @@ cd ~/eddy-ng
 git pull
 ./install.sh
 ```
+------------------------------------------------------------------------------------------
+## Updating Klipper
 
+Because Klipper does not have an extension mechanism, the eddy-ng install process needs to make some changes to the Klipper files during installation. You may want to uninstall eddy-ng (the source, not your configuration) from Klipper first before updating, and then re-run the install script after the update. For example:
+
+```
+# uninstall eddy-ng
+cd ~/eddy-ng
+./install.sh --uninstall
+# update Klipper
+cd ~/klipper
+git pull
+# re-install eddy-ng
+cd ~/eddy-ng
+./install.sh
+```
+
+If you experience problems with updating Klipper via git commands, you can manually clear out eddy-ng changes directly with:
+
+```
+cd ~/klipper
+git restore src/Makefile klippy/extras/bed_mesh.py
+```
