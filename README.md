@@ -23,7 +23,7 @@ You can also file issues in [this `eddy-ng` github repo](https://github.com/vvuk
 
 ```
 cd ~
-git clone https://github.com/vvuk/eddy-ng
+git clone https://github.com/maj0r1337/eddy-ng
 ```
 
 2. Run the install script:
